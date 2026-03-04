@@ -1,0 +1,4 @@
+.env
+bank.sql
+bank.sql-shm
+bank.sql-wal
