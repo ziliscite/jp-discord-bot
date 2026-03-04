@@ -5,6 +5,7 @@ go 1.25.6
 require (
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/joho/godotenv v1.5.1
+	github.com/otiai10/gosseract/v2 v2.4.1
 	github.com/sashabaranov/go-openai v1.41.2
 	modernc.org/sqlite v1.46.1
 )

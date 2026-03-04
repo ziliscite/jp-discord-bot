@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/bwmarrin/discordgo"
 	"log/slog"
 	"sync"
 	"time"
-	"unicode"
-
-	"github.com/bwmarrin/discordgo"
 )
 
 const (
@@ -49,6 +47,13 @@ var slashCommand = &discordgo.ApplicationCommand{
 			Required:    false,
 		},
 	},
+}
+
+// allCommands is the complete list of slash commands registered on startup.
+// Add new commands here and route them in onInteractionCreate.
+var allCommands = []*discordgo.ApplicationCommand{
+	slashCommand,
+	ocrCommand,
 }
 
 // job is a unit of work dispatched to a worker goroutine
@@ -105,12 +110,17 @@ func (b *Bot) Start(ctx context.Context) error {
 	defer session.Close()
 
 	// Register the /query slash command.
-	if _, err = session.ApplicationCommandCreate(
-		session.State.User.ID,
-		b.cfg.DiscordGuildID,
-		slashCommand,
-	); err != nil {
-		return fmt.Errorf("register slash command: %w", err)
+	for _, def := range allCommands {
+		cmd, err := session.ApplicationCommandCreate(session.State.User.ID, b.cfg.DiscordGuildID, def)
+		if err != nil {
+			return fmt.Errorf("register slash command %q: %w", def.Name, err)
+		}
+
+		slog.Info("slash command registered",
+			"name", cmd.Name,
+			"id", cmd.ID,
+			"guild", b.cfg.DiscordGuildID,
+		)
 	}
 
 	slog.Info("discord gateway connected",
@@ -190,22 +200,26 @@ func (b *Bot) onMessageDeleteBulk(s *discordgo.Session, m *discordgo.MessageDele
 func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
-		if i.ApplicationCommandData().Name == slashCommandName {
+		switch i.ApplicationCommandData().Name {
+		case slashCommandName:
 			b.handleSlashQuery(s, i)
+		case ocrCommandName:
+			b.handleSlashOCR(s, i)
 		}
 
 	case discordgo.InteractionMessageComponent:
 		data := i.MessageComponentData()
 		switch {
-		case data.ComponentType == discordgo.SelectMenuComponent && hasPrefix(data.CustomID, cidSelect):
+		case data.ComponentType == discordgo.SelectMenuComponent &&
+			hasPrefix(data.CustomID, cidSelect):
 			b.handleSelectInteraction(s, i, data)
-		case data.ComponentType == discordgo.ButtonComponent && (hasPrefix(data.CustomID, cidPrev) || hasPrefix(data.CustomID, cidNext)):
+
+		case data.ComponentType == discordgo.ButtonComponent &&
+			(hasPrefix(data.CustomID, cidPrev) || hasPrefix(data.CustomID, cidNext)):
 			b.handleNavInteraction(s, i, data)
 		}
 	}
 }
-
-// ── Worker pool ───────────────────────────────────────────────────────────────
 
 func (b *Bot) worker(ctx context.Context, id int) {
 	slog.Debug("worker started", "worker_id", id)
@@ -351,24 +365,11 @@ func hasPrefix(s, prefix string) bool {
 }
 
 func isPureJapanese(s string) bool {
-	if s == "" {
-		return false
-	}
-
 	for _, r := range s {
-		switch {
-		// Hiragana
-		case unicode.In(r, unicode.Hiragana):
-		// Katakana (includes full-width)
-		case unicode.In(r, unicode.Katakana):
-		// Kanji
-		case unicode.In(r, unicode.Han):
-		// Japanese punctuation & full-width symbols
-		case unicode.In(r, unicode.Common):
-		case unicode.IsSpace(r):
-		default:
+		if !isJapaneseChar(r) {
 			return false
 		}
 	}
+
 	return true
 }
