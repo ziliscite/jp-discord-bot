@@ -17,7 +17,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build \
     -ldflags="-s -w" \
     -trimpath \
     -o /out/discord-llm-bot \
-    ./main.go
+    ./cmd/main.go
 
 FROM debian:bookworm-slim
 
